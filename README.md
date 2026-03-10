@@ -1,6 +1,11 @@
 # panicdump
 
-![CI](https://github.com/tvoj-username/panicdump/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/Vanderhell/panicdump/actions/workflows/ci.yml/badge.svg)
+![Platform](https://img.shields.io/badge/platform-Cortex--M3%2FM4-blue)
+![Language](https://img.shields.io/badge/language-C%20%7C%20Python-informational)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Bare-metal](https://img.shields.io/badge/bare--metal-yes-brightgreen)
+![Dump size](https://img.shields.io/badge/dump%20size-192%20bytes-lightgrey)
 
 **Tiny crash dump library for bare-metal Cortex-M MCUs.**
 
