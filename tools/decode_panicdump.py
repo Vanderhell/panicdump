@@ -18,7 +18,6 @@ import json
 import zlib
 import re
 from dataclasses import dataclass, asdict
-from typing import Optional
 
 # ---------------------------------------------------------------------------
 # Constants — must match panicdump.h
@@ -162,34 +161,50 @@ def parse(raw: bytes) -> PanicDump:
 # CFSR decoder — helps explain what caused the fault
 # ---------------------------------------------------------------------------
 
+_UFSR_BITS = [
+    (9, "DIVBYZERO"),
+    (8, "UNALIGNED"),
+    (3, "NOCP (coprocessor fault)"),
+    (2, "INVPC (invalid PC load)"),
+    (1, "INVSTATE (invalid state)"),
+    (0, "UNDEFINSTR (undefined instruction)"),
+]
+
+_BFSR_BITS = [
+    (7, "BFARVALID (BFAR holds address)"),
+    (5, "LSPERR (FP lazy stack)"),
+    (4, "STKERR (stack push fault)"),
+    (3, "UNSTKERR (stack pop fault)"),
+    (2, "IMPRECISERR (imprecise data bus)"),
+    (1, "PRECISERR (precise data bus)"),
+    (0, "IBUSERR (instruction bus fault)"),
+]
+
+_MMFSR_BITS = [
+    (7, "MMARVALID (MMFAR holds address)"),
+    (5, "MLSPERR (FP lazy stack MPU)"),
+    (4, "MSTKERR (stack push MPU)"),
+    (3, "MUNSTKERR (stack pop MPU)"),
+    (1, "DACCVIOL (data access violation)"),
+    (0, "IACCVIOL (instruction access violation)"),
+]
+
+
 def decode_cfsr(cfsr: int) -> list[str]:
-    bits = []
-    # UFSR (bits 31:16)
-    ufsr = (cfsr >> 16) & 0xFFFF
-    if ufsr & (1 << 9): bits.append("DIVBYZERO")
-    if ufsr & (1 << 8): bits.append("UNALIGNED")
-    if ufsr & (1 << 3): bits.append("NOCP (coprocessor fault)")
-    if ufsr & (1 << 2): bits.append("INVPC (invalid PC load)")
-    if ufsr & (1 << 1): bits.append("INVSTATE (invalid state)")
-    if ufsr & (1 << 0): bits.append("UNDEFINSTR (undefined instruction)")
-    # BFSR (bits 15:8)
-    bfsr = (cfsr >> 8) & 0xFF
-    if bfsr & (1 << 7): bits.append("BFARVALID (BFAR holds address)")
-    if bfsr & (1 << 5): bits.append("LSPERR (FP lazy stack)")
-    if bfsr & (1 << 4): bits.append("STKERR (stack push fault)")
-    if bfsr & (1 << 3): bits.append("UNSTKERR (stack pop fault)")
-    if bfsr & (1 << 2): bits.append("IMPRECISERR (imprecise data bus)")
-    if bfsr & (1 << 1): bits.append("PRECISERR (precise data bus)")
-    if bfsr & (1 << 0): bits.append("IBUSERR (instruction bus fault)")
-    # MMFSR (bits 7:0)
-    mmfsr = cfsr & 0xFF
-    if mmfsr & (1 << 7): bits.append("MMARVALID (MMFAR holds address)")
-    if mmfsr & (1 << 5): bits.append("MLSPERR (FP lazy stack MPU)")
-    if mmfsr & (1 << 4): bits.append("MSTKERR (stack push MPU)")
-    if mmfsr & (1 << 3): bits.append("MUNSTKERR (stack pop MPU)")
-    if mmfsr & (1 << 1): bits.append("DACCVIOL (data access violation)")
-    if mmfsr & (1 << 0): bits.append("IACCVIOL (instruction access violation)")
-    return bits
+    ufsr  = (cfsr >> 16) & 0xFFFF
+    bfsr  = (cfsr >> 8)  & 0xFF
+    mmfsr = cfsr         & 0xFF
+    result = []
+    for bit, name in _UFSR_BITS:
+        if ufsr & (1 << bit):
+            result.append(name)
+    for bit, name in _BFSR_BITS:
+        if bfsr & (1 << bit):
+            result.append(name)
+    for bit, name in _MMFSR_BITS:
+        if mmfsr & (1 << bit):
+            result.append(name)
+    return result
 
 # ---------------------------------------------------------------------------
 # Report rendering

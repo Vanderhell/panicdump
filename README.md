@@ -1,5 +1,7 @@
 # panicdump
 
+![CI](https://github.com/tvoj-username/panicdump/actions/workflows/ci.yml/badge.svg)
+
 **Tiny crash dump library for bare-metal Cortex-M MCUs.**
 
 When your MCU faults, panicdump captures the minimal crash context, stores it in

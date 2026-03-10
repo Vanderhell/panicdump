@@ -18,7 +18,6 @@ Usage:
 
 import argparse
 import struct
-import sys
 import zlib
 from pathlib import Path
 
