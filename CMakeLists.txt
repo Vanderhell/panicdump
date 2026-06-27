@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(panicdump VERSION 1.0.0 LANGUAGES C ASM)
+project(panicdump VERSION 2.0.0 LANGUAGES C ASM)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)

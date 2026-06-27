@@ -3,6 +3,13 @@
 panicdump is a small retained-RAM crash dump library for bare-metal Cortex-M
 systems with an offline decoder.
 
+Current release: `v2.0.0`
+
+Verification status:
+
+- GitHub Actions CI #5 passed for host, sanitizer, static-analysis, package,
+  Python decoder, and ARM verification gates.
+
 ## What it does
 
 - Captures fault state into a fixed 192-byte wire image
@@ -72,6 +79,11 @@ Native C host smoke test:
 ```sh
 ctest --test-dir build -C Release --output-on-failure
 ```
+
+## Release Notes
+
+See [CHANGELOG.md](CHANGELOG.md) for the `v2.0.0` release notes and the
+preserved `v1.0.0` history.
 
 ## Package layout
 

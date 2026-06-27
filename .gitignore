@@ -1,4 +1,6 @@
 /prompts
 /release_prompts
 /issue_prompts
-*.md
+/docs_prompts
+/refs
+/.pytest_cache
