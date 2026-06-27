@@ -1,13 +1,14 @@
 #include "panicdump_port.h"
 
 #include <stdlib.h>
-#include <string.h>
+
+#include "panicdump_util.h"
 
 void panicdump_port_capture_sw_regs(panicdump_regs_t *out_regs,
                                     panicdump_stack_t *out_stack)
 {
-    memset(out_regs, 0, sizeof(*out_regs));
-    memset(out_stack, 0, sizeof(*out_stack));
+    panicdump_zero_bytes(out_regs, sizeof(*out_regs));
+    panicdump_zero_bytes(out_stack, sizeof(*out_stack));
     out_stack->captured_sp = (uint32_t)(uintptr_t)out_stack;
 }
 

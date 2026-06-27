@@ -1,7 +1,7 @@
 #include "panicdump_port.h"
+#include "panicdump_util.h"
 
 #include <stdint.h>
-#include <string.h>
 
 typedef struct {
     uint32_t r0;
@@ -24,7 +24,7 @@ static bool panicdump_frame_within_ram(const uint32_t *frame)
 
 static void panicdump_capture_stack_slice(panicdump_stack_t *out, const uint32_t *frame)
 {
-    memset(out, 0, sizeof(*out));
+    panicdump_zero_bytes(out, sizeof(*out));
     out->captured_sp = (uint32_t)(uintptr_t)frame;
 
     if (!panicdump_frame_within_ram(frame)) {
@@ -32,7 +32,7 @@ static void panicdump_capture_stack_slice(panicdump_stack_t *out, const uint32_t
     }
 
     out->stack_bytes = PANICDUMP_WIRE_STACK_BYTES;
-    memcpy(out->data, frame, PANICDUMP_WIRE_STACK_BYTES);
+    panicdump_copy_bytes(out->data, frame, PANICDUMP_WIRE_STACK_BYTES);
 }
 
 static void panicdump_read_special_regs(panicdump_regs_t *regs)
@@ -67,8 +67,8 @@ void panicdump_fault_handler_c(const uint32_t *exc_frame,
     panicdump_stack_t stack;
     uint32_t flags = 0u;
 
-    memset(&regs, 0, sizeof(regs));
-    memset(&stack, 0, sizeof(stack));
+    panicdump_zero_bytes(&regs, sizeof(regs));
+    panicdump_zero_bytes(&stack, sizeof(stack));
 
     if (use_psp) {
         flags |= PANICDUMP_FLAG_USE_PSP;
@@ -128,7 +128,7 @@ void panicdump_port_capture_sw_regs(panicdump_regs_t *out_regs,
         : "memory"
     );
 
-    memset(out_regs, 0, sizeof(*out_regs));
+    panicdump_zero_bytes(out_regs, sizeof(*out_regs));
     out_regs->r0 = gp[0];
     out_regs->r1 = gp[1];
     out_regs->r2 = gp[2];
@@ -142,13 +142,13 @@ void panicdump_port_capture_sw_regs(panicdump_regs_t *out_regs,
 
     panicdump_read_special_regs(out_regs);
 
-    memset(out_stack, 0, sizeof(*out_stack));
+    panicdump_zero_bytes(out_stack, sizeof(*out_stack));
     out_stack->captured_sp = sp_val;
     out_stack->stack_bytes = 0u;
     if (panicdump_frame_within_ram((const uint32_t *)(uintptr_t)sp_val)) {
         out_stack->stack_bytes = PANICDUMP_WIRE_STACK_BYTES;
-        memcpy(out_stack->data, (const void *)(uintptr_t)sp_val,
-               PANICDUMP_WIRE_STACK_BYTES);
+        panicdump_copy_bytes(out_stack->data, (const void *)(uintptr_t)sp_val,
+                             PANICDUMP_WIRE_STACK_BYTES);
     }
 }
 

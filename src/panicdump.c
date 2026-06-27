@@ -2,9 +2,8 @@
 
 #include "panicdump_crc32.h"
 #include "panicdump_port.h"
+#include "panicdump_util.h"
 #include "panicdump_wire.h"
-
-#include <string.h>
 
 #if defined(__GNUC__) || defined(__clang__)
 __attribute__((section(".noinit"), aligned(4)))
@@ -66,9 +65,9 @@ static void panicdump_write_stack(uint8_t *wire, const panicdump_stack_t *stack)
     panicdump_write_u32_field(wire, offset, stack->stack_bytes);
     offset += 4u;
     if (stack->stack_bytes != 0u) {
-        memcpy(wire + offset, stack->data, PANICDUMP_WIRE_STACK_BYTES);
+        panicdump_copy_bytes(wire + offset, stack->data, PANICDUMP_WIRE_STACK_BYTES);
     } else {
-        memset(wire + offset, 0, PANICDUMP_WIRE_STACK_BYTES);
+        panicdump_zero_bytes(wire + offset, PANICDUMP_WIRE_STACK_BYTES);
     }
 }
 
@@ -106,7 +105,7 @@ static void panicdump_read_stack(panicdump_stack_t *stack, const uint8_t *wire)
     if (stack->stack_bytes > PANICDUMP_WIRE_STACK_BYTES) {
         stack->stack_bytes = 0u;
     }
-    memcpy(stack->data, p + 8u, PANICDUMP_WIRE_STACK_BYTES);
+    panicdump_copy_bytes(stack->data, p + 8u, PANICDUMP_WIRE_STACK_BYTES);
 }
 
 static bool panicdump_dump_fields_valid(const panicdump_dump_t *dump)
@@ -165,7 +164,7 @@ static void panicdump_encode_header(uint8_t *wire, const panicdump_dump_t *dump)
 
 static void panicdump_encode_dump_fields(uint8_t *wire, const panicdump_dump_t *dump)
 {
-    memset(wire, 0, PANICDUMP_WIRE_TOTAL_SIZE);
+    panicdump_zero_bytes(wire, PANICDUMP_WIRE_TOTAL_SIZE);
     panicdump_write_u32_field(wire, PANICDUMP_WIRE_MAGIC_OFFSET, dump->magic);
     panicdump_encode_header(wire, dump);
     panicdump_write_regs(wire, &dump->regs);
@@ -174,7 +173,7 @@ static void panicdump_encode_dump_fields(uint8_t *wire, const panicdump_dump_t *
 
 static void panicdump_decode_dump_fields(panicdump_dump_t *dump, const uint8_t *wire)
 {
-    memset(dump, 0, sizeof(*dump));
+    panicdump_zero_bytes(dump, sizeof(*dump));
     dump->magic = panicdump_wire_load_u32(wire + PANICDUMP_WIRE_MAGIC_OFFSET);
     dump->version = panicdump_wire_load_u16(wire + PANICDUMP_WIRE_VERSION_OFFSET);
     dump->header_size = panicdump_wire_load_u16(wire + PANICDUMP_WIRE_HEADER_SIZE_OFFSET);
@@ -191,7 +190,9 @@ static void panicdump_decode_dump_fields(panicdump_dump_t *dump, const uint8_t *
 
 static void panicdump_write_magic(uint8_t *wire, uint32_t magic)
 {
-    *(volatile uint32_t *)(void *)(wire + PANICDUMP_WIRE_MAGIC_OFFSET) = magic;
+    volatile uint32_t *magic_ptr =
+        (volatile uint32_t *)(wire + PANICDUMP_WIRE_MAGIC_OFFSET);
+    *magic_ptr = magic;
 }
 
 static void panicdump_write_commit_marker(uint8_t *wire)
@@ -296,7 +297,7 @@ bool panicdump_has_valid(void)
 
 void panicdump_clear(void)
 {
-    memset(g_dump_wire, 0, sizeof(g_dump_wire));
+    panicdump_zero_bytes(g_dump_wire, sizeof(g_dump_wire));
 }
 
 const panicdump_dump_t *panicdump_get(void)
@@ -443,13 +444,15 @@ void panicdump_commit_snapshot(const panicdump_regs_t *regs,
     if (regs) {
         panicdump_write_regs(g_dump_wire, regs);
     } else {
-        memset(g_dump_wire + PANICDUMP_WIRE_REGS_OFFSET, 0, PANICDUMP_WIRE_REGS_SIZE);
+        panicdump_zero_bytes(g_dump_wire + PANICDUMP_WIRE_REGS_OFFSET,
+                             PANICDUMP_WIRE_REGS_SIZE);
     }
 
     if (stack) {
         panicdump_write_stack(g_dump_wire, stack);
     } else {
-        memset(g_dump_wire + PANICDUMP_WIRE_STACK_OFFSET, 0, PANICDUMP_WIRE_STACK_SIZE);
+        panicdump_zero_bytes(g_dump_wire + PANICDUMP_WIRE_STACK_OFFSET,
+                             PANICDUMP_WIRE_STACK_SIZE);
     }
 
     panicdump_write_u32_field(g_dump_wire, PANICDUMP_WIRE_CRC32_OFFSET,
