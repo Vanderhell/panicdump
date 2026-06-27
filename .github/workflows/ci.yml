@@ -31,6 +31,31 @@ jobs:
         run: |
           PYTHONPATH=tools python3 -m pytest tests/ -v --tb=short
 
+  native:
+    name: Native build and package
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure host build
+        run: cmake -S . -B build -DPANICDUMP_BUILD_TESTS=ON -DPANICDUMP_PORT=host
+
+      - name: Build host targets
+        run: cmake --build build --config Release --target panicdump_core_test
+
+      - name: Run CTest
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Install package
+        run: cmake --install build --prefix .install
+
+      - name: Configure external consumer
+        run: cmake -S tests/package_consumer -B build-consumer -DCMAKE_PREFIX_PATH=$PWD/.install
+
+      - name: Build external consumer
+        run: cmake --build build-consumer --config Release
+
   lint:
     name: Python lint
     runs-on: ubuntu-latest

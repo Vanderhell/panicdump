@@ -1,174 +1,155 @@
 #ifndef PANICDUMP_H
 #define PANICDUMP_H
 
-/**
- * panicdump — Tiny crash dump library for bare-metal Cortex-M MCUs.
+/*
+ * panicdump - tiny crash dump library for bare-metal Cortex-M MCUs.
  *
- * v1 scope:
- *   - Cortex-M3/M4 only
- *   - bare-metal only
- *   - retained RAM (.noinit) backend
- *   - UART export (hex-framed)
- *   - offline Python decoder
- *
- * NOT supported in v1:
- *   - RTOS, flash backend, stack unwinding, symbol resolution
- *
- * See docs/FORMAT.md and docs/LIMITATIONS.md for details.
+ * Scope:
+ *   - Cortex-M3/M4 non-FPU target support
+ *   - retained RAM dump slot
+ *   - offline host decoding
+ *   - no RTOS, stack unwinding, flash backend, or symbol resolution
  */
 
-#include <stdint.h>
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* -------------------------------------------------------------------------
- * Version & Magic
- * ---------------------------------------------------------------------- */
+#if defined(__GNUC__) || defined(__clang__)
+#define PANICDUMP_NORETURN __attribute__((noreturn))
+#define PANICDUMP_NONNULL(...) __attribute__((nonnull(__VA_ARGS__)))
+#else
+#define PANICDUMP_NORETURN
+#define PANICDUMP_NONNULL(...)
+#endif
 
-#define PANICDUMP_MAGIC         UINT32_C(0x50444331)  /* 'PDC1' */
-#define PANICDUMP_VERSION       UINT16_C(1)
-#define PANICDUMP_ARCH_CORTEXM3 UINT32_C(0x0003)
-#define PANICDUMP_ARCH_CORTEXM4 UINT32_C(0x0004)
+#define PANICDUMP_MAGIC                 UINT32_C(0x50444331)
+#define PANICDUMP_VERSION               UINT16_C(1)
+#define PANICDUMP_ARCH_CORTEXM3         UINT32_C(0x0003)
+#define PANICDUMP_ARCH_CORTEXM4         UINT32_C(0x0004)
+#define PANICDUMP_ARCH_HOST             UINT32_C(0xFFFF)
 
-/* -------------------------------------------------------------------------
- * Fault reasons
- * ---------------------------------------------------------------------- */
+#define PANICDUMP_REASON_TAG_MAX_LEN    32u
+
+#define PANICDUMP_FLAG_INVALID_FRAME    UINT32_C(1u << 0)
+#define PANICDUMP_FLAG_USE_PSP          UINT32_C(1u << 1)
+#define PANICDUMP_FLAG_STACK_VALID      UINT32_C(1u << 2)
+#define PANICDUMP_FLAG_FRAME_VALID      UINT32_C(1u << 3)
+
+enum {
+    PANICDUMP_WIRE_MAGIC_OFFSET = 0u,
+    PANICDUMP_WIRE_VERSION_OFFSET = 4u,
+    PANICDUMP_WIRE_HEADER_SIZE_OFFSET = 6u,
+    PANICDUMP_WIRE_TOTAL_SIZE_OFFSET = 8u,
+    PANICDUMP_WIRE_FLAGS_OFFSET = 12u,
+    PANICDUMP_WIRE_ARCH_ID_OFFSET = 16u,
+    PANICDUMP_WIRE_FAULT_REASON_OFFSET = 20u,
+    PANICDUMP_WIRE_SEQUENCE_OFFSET = 24u,
+    PANICDUMP_WIRE_USER_TAG_OFFSET = 28u,
+    PANICDUMP_WIRE_CRC32_OFFSET = 32u,
+    PANICDUMP_WIRE_HEADER_SIZE = 36u,
+    PANICDUMP_WIRE_REGS_OFFSET = 36u,
+    PANICDUMP_WIRE_REGS_SIZE = 84u,
+    PANICDUMP_WIRE_STACK_OFFSET = 120u,
+    PANICDUMP_WIRE_STACK_SIZE = 72u,
+    PANICDUMP_WIRE_STACK_BYTES = 64u,
+    PANICDUMP_WIRE_TOTAL_SIZE = 192u,
+};
 
 typedef enum {
-    PANICDUMP_FAULT_UNKNOWN     = 0,
-    PANICDUMP_FAULT_HARD        = 1,
-    PANICDUMP_FAULT_MEM         = 2,
-    PANICDUMP_FAULT_BUS         = 3,
-    PANICDUMP_FAULT_USAGE       = 4,
-    PANICDUMP_FAULT_SW_TRIGGER  = 5,   /* explicit software panic */
+    PANICDUMP_FAULT_UNKNOWN = 0,
+    PANICDUMP_FAULT_HARD = 1,
+    PANICDUMP_FAULT_MEM = 2,
+    PANICDUMP_FAULT_BUS = 3,
+    PANICDUMP_FAULT_USAGE = 4,
+    PANICDUMP_FAULT_SW_TRIGGER = 5,
 } panicdump_fault_t;
 
-/* -------------------------------------------------------------------------
- * Dump structs (packed — binary format, do NOT change field order in v1)
- * ---------------------------------------------------------------------- */
+typedef enum {
+    PANICDUMP_EXPORT_OK = 0,
+    PANICDUMP_EXPORT_NO_DUMP = 1,
+    PANICDUMP_EXPORT_SHORT_WRITE = 2,
+    PANICDUMP_EXPORT_NULL_CALLBACK = 3,
+} panicdump_export_status_t;
 
-#pragma pack(push, 1)
+typedef bool (*panicdump_write_char_fn)(char c);
 
 typedef struct {
-    /* Stacked by hardware on exception entry (from exception frame) */
     uint32_t r0;
     uint32_t r1;
     uint32_t r2;
     uint32_t r3;
     uint32_t r12;
-    uint32_t lr;         /* link register at fault */
-    uint32_t pc;         /* program counter at fault */
+    uint32_t lr;
+    uint32_t pc;
     uint32_t xpsr;
-
-    /* Read from special registers in fault handler */
     uint32_t msp;
     uint32_t psp;
     uint32_t control;
     uint32_t primask;
     uint32_t basepri;
     uint32_t faultmask;
-
-    /* Fault status registers (SCB) */
-    uint32_t cfsr;       /* Configurable Fault Status */
-    uint32_t hfsr;       /* HardFault Status */
-    uint32_t dfsr;       /* Debug Fault Status */
-    uint32_t mmfar;      /* MemManage Fault Address */
-    uint32_t bfar;       /* BusFault Address */
-    uint32_t afsr;       /* Auxiliary Fault Status */
-    uint32_t shcsr;      /* System Handler Control and State */
+    uint32_t cfsr;
+    uint32_t hfsr;
+    uint32_t dfsr;
+    uint32_t mmfar;
+    uint32_t bfar;
+    uint32_t afsr;
+    uint32_t shcsr;
 } panicdump_regs_t;
-
-#define PANICDUMP_STACK_SLICE_BYTES  64u
 
 typedef struct {
     uint32_t captured_sp;
-    uint32_t stack_bytes;                       /* always PANICDUMP_STACK_SLICE_BYTES */
-    uint8_t  data[PANICDUMP_STACK_SLICE_BYTES];
+    uint32_t stack_bytes;
+    uint8_t data[PANICDUMP_WIRE_STACK_BYTES];
 } panicdump_stack_t;
 
 typedef struct {
-    /* === header === */
-    uint32_t magic;          /* written LAST — marks dump as complete */
+    uint32_t magic;
     uint16_t version;
-    uint16_t header_size;    /* sizeof(panicdump_header_t) */
-    uint32_t total_size;     /* sizeof entire panicdump_dump_t) */
-    uint32_t flags;          /* reserved, set to 0 */
+    uint16_t header_size;
+    uint32_t total_size;
+    uint32_t flags;
     uint32_t arch_id;
     uint32_t fault_reason;
-    uint32_t sequence;       /* monotonic counter, 0 in v1 */
-    uint32_t user_tag;       /* last value set by panicdump_set_user_tag() */
-    uint32_t crc32;          /* CRC32 over entire struct with this field = 0 */
-    /* === payload === */
-    panicdump_regs_t  regs;
+    uint32_t sequence;
+    uint32_t user_tag;
+    uint32_t crc32;
+    panicdump_regs_t regs;
     panicdump_stack_t stack;
 } panicdump_dump_t;
 
-#pragma pack(pop)
-
-/* -------------------------------------------------------------------------
- * Public API
- * ---------------------------------------------------------------------- */
-
-/**
- * Check whether a valid (complete, CRC-ok) dump is present in retained RAM.
- */
 bool panicdump_has_valid(void);
-
-/**
- * Invalidate / erase current dump from retained RAM.
- */
 void panicdump_clear(void);
-
-/**
- * Get a read-only view of the current dump.
- * Returns NULL if no valid dump is present.
- *
- * NOTE: The returned pointer is const by convention, not by hardware
- * enforcement. Do not cast away const and modify the dump — this will
- * corrupt the stored data and invalidate the CRC.
- */
 const panicdump_dump_t *panicdump_get(void);
 
-/**
- * Export current dump as hex-framed text.
- * Caller provides a single-char write callback (e.g. UART putchar).
- * Does nothing if no valid dump is present.
- */
-void panicdump_export_hex(void (*write_char)(char c));
+panicdump_export_status_t panicdump_export_hex(panicdump_write_char_fn write_char);
+panicdump_export_status_t panicdump_boot_check_and_export(panicdump_write_char_fn write_char);
 
-/**
- * Set a user-defined tag that will be included in the next dump.
- * Call this at key application milestones (e.g. task IDs, state machine states).
- */
 void panicdump_set_user_tag(uint32_t tag);
+uint32_t panicdump_get_user_tag(void);
 
-/**
- * Convenience: check for dump at boot, export it, then clear it.
- * write_char — UART output callback
- */
-void panicdump_boot_check_and_export(void (*write_char)(char c));
+uint32_t panicdump_reason_tag_hash_n(const char *reason_tag, size_t max_len);
+void panicdump_trigger_reason(uint32_t reason_tag) PANICDUMP_NORETURN;
+void panicdump_trigger_tag(const char *reason_tag, size_t max_len) PANICDUMP_NORETURN;
 
-/**
- * Software-triggered panic dump (useful for assert / watchdog handlers).
- * Does NOT return — resets the MCU after saving the dump.
- *
- * reason_tag: short ASCII string identifying the panic site (e.g. "assert",
- *             "watchdog", "stack_overflow"). It is encoded as a FNV-1a 32-bit
- *             hash and stored in user_tag, overriding any previous tag value.
- *             The same string always produces the same hash — cross-reference
- *             offline without symbol info.
- *             Pass NULL to preserve the last panicdump_set_user_tag() value.
- *
- * Example:
- *   panicdump_trigger("assert");     // user_tag = fnv1a("assert") = 0x5D9E9B9B
- *   panicdump_trigger("watchdog");   // user_tag = fnv1a("watchdog")
- *   panicdump_trigger(NULL);         // user_tag unchanged
- */
-void panicdump_trigger(const char *reason_tag);
+static inline void panicdump_trigger(const char *reason_tag)
+{
+    panicdump_trigger_tag(reason_tag, PANICDUMP_REASON_TAG_MAX_LEN);
+}
+
+bool panicdump_encode_dump(uint8_t *out_wire,
+                           size_t out_wire_len,
+                           const panicdump_dump_t *dump);
+bool panicdump_decode_dump(panicdump_dump_t *out_dump,
+                           const uint8_t *wire,
+                           size_t wire_len);
+bool panicdump_validate_dump(const panicdump_dump_t *dump);
+bool panicdump_validate_wire(const uint8_t *wire, size_t wire_len);
 
 #ifdef __cplusplus
 }

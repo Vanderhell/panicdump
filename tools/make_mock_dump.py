@@ -30,6 +30,12 @@ VERSION       = 1
 STACK_SLICE   = 64
 
 ARCH_CORTEXM4 = 0x0004
+FLAG_INVALID_FRAME = 1 << 0
+FLAG_USE_PSP       = 1 << 1
+FLAG_STACK_VALID   = 1 << 2
+FLAG_FRAME_VALID   = 1 << 3
+EXC_RETURN_MSP     = 0xFFFFFFF9
+EXC_RETURN_PSP     = 0xFFFFFFFD
 
 FAULT_CODES = {
     "unknown":    0,
@@ -142,6 +148,7 @@ def build_dump(
     fault_name: str = "hardfault",
     user_tag: int   = 42,
     sequence: int   = 0,
+    flags: int      = 0,
     corrupt_crc: bool = False,
     partial: bool     = False,
 ) -> bytes:
@@ -149,6 +156,12 @@ def build_dump(
     regs = make_regs(fault_name.lower())
     sp = regs[8]  # msp
     stack_data = make_stack_slice(sp)
+    if fault_name.lower() == "sw_trigger":
+        sequence = 0
+        flags = 0
+    elif not flags:
+        flags = FLAG_STACK_VALID | FLAG_FRAME_VALID
+        sequence = EXC_RETURN_MSP
 
     # Registers block
     regs_bytes = struct.pack(REGS_FMT, *regs)
@@ -166,7 +179,7 @@ def build_dump(
         VERSION,
         header_size,
         total_size,
-        0,             # flags
+        flags,
         ARCH_CORTEXM4,
         fault_code,
         sequence,
@@ -187,7 +200,7 @@ def build_dump(
         VERSION,
         header_size,
         total_size,
-        0,
+        flags,
         ARCH_CORTEXM4,
         fault_code,
         sequence,

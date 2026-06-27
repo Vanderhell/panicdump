@@ -1,96 +1,52 @@
-# panicdump v1 Binary Format
+# panicdump Wire Format
 
-## Overview
-
-A panicdump v1 dump is a fixed-size, little-endian binary blob of **192 bytes**.
-All structs are packed (`#pragma pack(push,1)`) — no padding.
+panicdump stores a fixed 192-byte little-endian wire image.
 
 ## Layout
 
-```
-Offset  Size  Field            Description
-──────────────────────────────────────────────────────────────
- 0      4     magic            0x50444331 ('PDC1') — written LAST
- 4      2     version          Always 1
- 6      2     header_size      Offset to register block = 36
- 8      4     total_size       Total dump size = 192
-12      4     flags            Reserved, always 0
-16      4     arch_id          0x0003=Cortex-M3, 0x0004=Cortex-M4
-20      4     fault_reason     See fault reason codes below
-24      4     sequence         Reserved, always 0 in v1
-28      4     user_tag         Last value from panicdump_set_user_tag()
-32      4     crc32            CRC-32 (ISO 3309) over entire dump with this field = 0
-──────────────────────────────────────────────────────────────
-36     84     Register block   See below
-──────────────────────────────────────────────────────────────
-120    72     Stack slice      See below
-──────────────────────────────────────────────────────────────
-Total: 192 bytes
-```
+| Offset | Size | Field | Notes |
+| --- | --- | --- | --- |
+| 0 | 4 | magic | `0x50444331`, written last |
+| 4 | 2 | version | `1` |
+| 6 | 2 | header_size | `36` |
+| 8 | 4 | total_size | `192` |
+| 12 | 4 | flags | Bitfield |
+| 16 | 4 | arch_id | `0x0003` or `0x0004` |
+| 20 | 4 | fault_reason | `0..5` |
+| 24 | 4 | sequence | EXC_RETURN for fault captures, `0` for software trigger |
+| 28 | 4 | user_tag | Last application tag |
+| 32 | 4 | crc32 | CRC-32 over the whole image with this field treated as zero |
+| 36 | 84 | regs | 21 little-endian `uint32_t` values |
+| 120 | 72 | stack | `captured_sp`, `stack_bytes`, and 64 bytes of data |
 
-## Register Block (offset 36, 84 bytes)
+## Flags
 
-21 × uint32_t, little-endian:
+- bit 0: invalid frame
+- bit 1: PSP active
+- bit 2: stack slice valid
+- bit 3: exception frame valid
 
-```
- r0, r1, r2, r3, r12, lr, pc, xpsr          (from hardware exception frame)
- msp, psp, control, primask, basepri,
- faultmask                                   (special registers)
- cfsr, hfsr, dfsr, mmfar, bfar, afsr, shcsr  (SCB fault status registers)
-```
+## Validity
 
-## Stack Slice (offset 120, 72 bytes)
+A dump is valid when:
 
-```
-Offset  Size  Field          Description
- 0      4     captured_sp    Stack pointer value at capture time
- 4      4     stack_bytes    Always 64 in v1
- 8      64    data           Raw bytes from captured_sp onwards
-```
-
-## Fault Reason Codes
-
-| Code | Name         |
-|------|--------------|
-|  0   | Unknown      |
-|  1   | HardFault    |
-|  2   | MemManage    |
-|  3   | BusFault     |
-|  4   | UsageFault   |
-|  5   | SW_Trigger   |
-
-## Validity Rules
-
-A dump is **valid** if and only if:
 1. `magic == 0x50444331`
 2. `version == 1`
-3. `total_size == 192`
-4. CRC-32 of entire dump (with `crc32` field zeroed) matches `crc32` field
+3. `header_size == 36`
+4. `total_size == 192`
+5. `arch_id` is supported
+6. `fault_reason` is supported
+7. `stack_bytes` is `0` or `64`
+8. CRC-32 matches
 
-## Write Protocol
+## Commit order
 
-The write order is critical to prevent partial dumps appearing valid:
+The commit marker is published after the payload and CRC are written:
 
-1. Set `magic = 0` (invalidate)
-2. Write all fields except `magic` and `crc32`
-3. Compute CRC-32 over entire struct with `crc32 = 0`
-4. Write `crc32`
-5. Write `magic = 0x50444331` (commit — last write)
+1. Clear the magic field
+2. Write the header, registers, and stack slice
+3. Compute the CRC with the CRC field treated as zero
+4. Write the CRC
+5. Publish the final magic with one aligned store
 
-## UART Hex-Framed Export
-
-```
-=== PANICDUMP BEGIN ===\r\n
-<hex bytes, 64 hex chars per line>\r\n
-...
-=== PANICDUMP END ===\r\n
-```
-
-`decode_panicdump.py --hex` parses this format directly.
-
-## Versioning
-
-- `version` field allows future format changes.
-- `header_size` allows the decoder to skip unknown header fields.
-- v1 decoder must reject dumps where `version != 1`.
-- Future versions should maintain backward-compatible CRC scheme.
+The Python decoder and C validator use the same CRC definition.
