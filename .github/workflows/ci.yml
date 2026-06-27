@@ -214,5 +214,4 @@ jobs:
         run: |
           arm-none-eabi-size build-arm-${{ matrix.cpu }}/panicdump.elf
           arm-none-eabi-objdump -t build-arm-${{ matrix.cpu }}/panicdump.elf | grep 'panicdump_port_cortexm\|panicdump_fault_handler_c\|panicdump_commit_snapshot'
-          cat build-arm-${{ matrix.cpu }}/panicdump.o.su
-          cat build-arm-${{ matrix.cpu }}/panicdump_port_cortexm.o.su
+          find build-arm-${{ matrix.cpu }} -name '*.su' -print -exec cat {} \;
